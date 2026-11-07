@@ -69,7 +69,7 @@ async def currencies(base: str = "EUR"):
     if not re.fullmatch(r"[A-Z]{3}",base): raise HTTPException(400,"Invalid currency")
     try:
         async with httpx.AsyncClient(timeout=15) as client:
-            response=await client.get("https://api.frankfurter.app/latest",params={"from":base})
+            response=await client.get("https://api.frankfurter.dev/v1/latest",params={"from":base})
             response.raise_for_status()
             data=response.json()
         return {"base":base,"date":data.get("date"),"rates":data.get("rates",{})}
@@ -83,10 +83,11 @@ async def convert(amount: float, source: str="EUR", target: str="USD"):
     if source==target: return {"amount":amount,"source":source,"target":target,"result":amount,"rate":1,"date":None}
     try:
         async with httpx.AsyncClient(timeout=15) as client:
-            response=await client.get(f"https://api.frankfurter.app/latest",params={"amount":amount,"from":source,"to":target})
+            response=await client.get("https://api.frankfurter.dev/v1/latest",params={"base":source,"symbols":target})
             response.raise_for_status()
             data=response.json()
-        return {"amount":amount,"source":source,"target":target,"result":data["rates"][target],"rate":data["rates"][target]/amount if amount else 0,"date":data.get("date")}
+        rate=float(data["rates"][target])
+        return {"amount":amount,"source":source,"target":target,"result":amount*rate,"rate":rate,"date":data.get("date")}
     except Exception: raise HTTPException(502,"Exchange rate unavailable")
 
 @app.get("/api/quote/{symbol}")
