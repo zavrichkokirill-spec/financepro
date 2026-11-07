@@ -153,6 +153,7 @@ $('languageSelect').value=currentLang;
 $('languageSelect').addEventListener('change',e=>{currentLang=e.target.value;localStorage.setItem('fp_lang',currentLang);translatePage();});
 const translationObserver=new MutationObserver(()=>translatePage());
 translationObserver.observe(document.body,{childList:true,subtree:true});
+translatePage();
 
 let assets=[],category='All',mainChart=null,dashChart=null,portfolio=JSON.parse(localStorage.getItem('fp_positions_v3')||'[]'),watch=JSON.parse(localStorage.getItem('fp_watch_v3')||'["BTC-USD","NVDA","GC=F","SPY"]');
 const categories=['All','Crypto','Stocks','Banks','Commodities','ETFs','Bonds','Indices','Forex'];
