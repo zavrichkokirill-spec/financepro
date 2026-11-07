@@ -1,5 +1,6 @@
 import asyncio
 import time
+import re
 from datetime import datetime, timezone
 import httpx
 from fastapi import FastAPI, HTTPException
@@ -38,13 +39,15 @@ def health(): return {"status":"ok"}
 
 @app.get("/api/market")
 async def market():
+    semaphore = asyncio.Semaphore(6)
     async with httpx.AsyncClient(timeout=15) as client:
         async def one(a):
-            try:
-                d=await yahoo_chart(client,a["symbol"])
-                return {**a,**{k:d[k] for k in ("price","previous","change","currency")}}
-            except Exception:
-                return {**a,"price":None,"previous":None,"change":None,"currency":"USD"}
+            async with semaphore:
+                try:
+                    d=await yahoo_chart(client,a["symbol"])
+                    return {**a,**{k:d[k] for k in ("price","previous","change","currency")}}
+                except Exception:
+                    return {**a,"price":None,"previous":None,"change":None,"currency":"USD"}
         rows=await asyncio.gather(*(one(a) for a in UNIVERSE))
     valid=[x for x in rows if x["change"] is not None]
     return {"assets":rows,"gainers":sorted(valid,key=lambda x:x["change"],reverse=True)[:5],"losers":sorted(valid,key=lambda x:x["change"])[:5],"updated":int(time.time())}
@@ -52,13 +55,23 @@ async def market():
 @app.get("/api/chart/{symbol:path}")
 async def chart(symbol:str, period:str="1mo", interval:str="1d"):
     symbol=symbol.upper()
-    if symbol not in LOOKUP: raise HTTPException(404,"Unsupported symbol")
+    if not re.fullmatch(r"[A-Z0-9.^=_-]{1,24}", symbol): raise HTTPException(400,"Invalid symbol")
     allowed={"1d":{"1m","5m","15m","30m"},"5d":{"5m","15m","30m","1h"},"1mo":{"30m","1h","1d"},"3mo":{"1h","1d"},"6mo":{"1d","1wk"},"1y":{"1d","1wk"},"5y":{"1wk","1mo"}}
     if period not in allowed or interval not in allowed[period]: raise HTTPException(400,"Unsupported period or interval")
     try:
         async with httpx.AsyncClient(timeout=18) as client: d=await yahoo_chart(client,symbol,period,interval)
         return {"symbol":symbol,"timestamps":d["timestamps"],"prices":d["closes"],"currency":d["currency"]}
     except Exception as e: raise HTTPException(502,"Market data provider unavailable")
+
+@app.get("/api/quote/{symbol}")
+async def quote(symbol: str):
+    symbol=symbol.upper()
+    if not re.fullmatch(r"[A-Z0-9.^=_-]{1,24}", symbol): raise HTTPException(400,"Invalid symbol")
+    try:
+        async with httpx.AsyncClient(timeout=15) as client: d=await yahoo_chart(client,symbol,"5d","15m")
+        known=LOOKUP.get(symbol,{"symbol":symbol,"name":symbol,"category":"Other"})
+        return {**known,**{k:d[k] for k in ("price","previous","change","currency")}}
+    except Exception: raise HTTPException(404,"No quote available for this ticker")
 
 @app.get("/", response_class=HTMLResponse)
 def home(): return PAGE
